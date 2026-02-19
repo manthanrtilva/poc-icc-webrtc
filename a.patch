@@ -1,0 +1,768 @@
+diff -urN examples/peerconnection/client/conductor.cc libwebrtc/examples/peerconnection/client/conductor.cc
+--- examples/peerconnection/client/conductor.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/conductor.cc	2026-02-18 10:57:06.121185700 +0000
+@@ -233,8 +233,10 @@
+   RTC_DCHECK(!peer_connection_);
+ 
+   webrtc::PeerConnectionInterface::RTCConfiguration config;
++  // config.servers.clear();
+   config.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
+   webrtc::PeerConnectionInterface::IceServer server;
++  // config.type = webrtc::PeerConnectionInterface::kRelay;
+   server.uri = GetPeerConnectionString();
+   config.servers.push_back(server);
+ 
+@@ -512,7 +514,7 @@
+     RTC_LOG(LS_ERROR) << "Failed to add audio track to PeerConnection: "
+                       << result_or_error.error().message();
+   }
+-
++#if 1
+   webrtc::scoped_refptr<CapturerTrackSource> video_device =
+       CapturerTrackSource::Create(*task_queue_factory_);
+   if (video_device) {
+@@ -528,7 +530,7 @@
+   } else {
+     RTC_LOG(LS_ERROR) << "OpenVideoCaptureDevice failed";
+   }
+-
++#endif
+   main_wnd_->SwitchToStreamingUI();
+ }
+ 
+@@ -561,8 +563,8 @@
+       break;
+ 
+     case SEND_MESSAGE_TO_PEER: {
+-      RTC_LOG(LS_INFO) << "SEND_MESSAGE_TO_PEER";
+       std::string* msg = reinterpret_cast<std::string*>(data);
++      RTC_LOG(LS_INFO) << "SEND_MESSAGE_TO_PEER:" << (msg ? *msg : "null");
+       if (msg) {
+         // For convenience, we always run the message through the queue.
+         // This way we can be sure that messages are sent to the server
+@@ -616,6 +618,7 @@
+ 
+   std::string sdp;
+   desc->ToString(&sdp);
++  RTC_LOG(LS_INFO) << "LocalDescription : "<<sdp;
+ 
+   // For loopback test. To save some connecting delay.
+   if (loopback_) {
+diff -urN examples/peerconnection/client/conductor.h libwebrtc/examples/peerconnection/client/conductor.h
+--- examples/peerconnection/client/conductor.h	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/conductor.h	2026-02-18 05:10:37.227803300 +0000
+@@ -24,8 +24,8 @@
+ #include "api/rtp_receiver_interface.h"
+ #include "api/scoped_refptr.h"
+ #include "api/task_queue/task_queue_factory.h"
+-#include "examples/peerconnection/client/main_wnd.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "rtc_base/thread.h"
+ 
+ namespace webrtc {
+diff -urN examples/peerconnection/client/defaults.cc libwebrtc/examples/peerconnection/client/defaults.cc
+--- examples/peerconnection/client/defaults.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/defaults.cc	2026-02-18 05:10:38.135906300 +0000
+@@ -8,7 +8,7 @@
+  *  be found in the AUTHORS file in the root of the source tree.
+  */
+ 
+-#include "examples/peerconnection/client/defaults.h"
++#include "libwebrtc/examples/peerconnection/client/defaults.h"
+ 
+ #include <stdlib.h>
+ 
+diff -urN examples/peerconnection/client/linux/cli_wnd.cc libwebrtc/examples/peerconnection/client/linux/cli_wnd.cc
+--- examples/peerconnection/client/linux/cli_wnd.cc	1970-01-01 00:00:00.000000000 +0000
++++ libwebrtc/examples/peerconnection/client/linux/cli_wnd.cc	2026-02-18 05:59:12.268951000 +0000
+@@ -0,0 +1,303 @@
++/*
++ *  Copyright 2012 The WebRTC Project Authors. All rights reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "libwebrtc/examples/peerconnection/client/linux/cli_wnd.h"
++
++
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include <map>
++#include <thread>
++#include <iostream>
++#include "api/media_stream_interface.h"
++#include "api/scoped_refptr.h"
++#include "api/video/i420_buffer.h"
++#include "api/video/video_frame.h"
++#include "api/video/video_frame_buffer.h"
++#include "api/video/video_rotation.h"
++#include "api/video/video_source_interface.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++#include "third_party/libyuv/include/libyuv/convert_from.h"
++
++namespace {
++
++//
++// Simple static functions that simply forward the callback to the
++// GtkMainWnd instance.
++//
++
++[[maybe_unused]] bool OnDestroyedCallback(GtkWidget* widget,
++                             GdkEvent* event,
++                             void* data) {
++                              RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++[[maybe_unused]] void OnClickedCallback(GtkWidget* widget, void* data) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++[[maybe_unused]] bool SimulateButtonClick(void* button) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++[[maybe_unused]] bool OnKeyPressCallback(GtkWidget* widget,
++                            GdkEventKey* key,
++                            void* data) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++[[maybe_unused]] void OnRowActivatedCallback(GtkTreeView* tree_view,
++                            GtkTreePath* path,
++                            GtkTreeViewColumn* column,
++                            void* data) {
++                              RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++[[maybe_unused]] bool SimulateLastRowActivated(void* data) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++// Creates a tree view, that we use to display the list of peers.
++[[maybe_unused]] void InitializeList(GtkWidget* list) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++// Adds an entry to a tree view.
++void AddToList(GtkWidget* list, const char* str, int value) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++struct UIThreadCallbackData {
++  explicit UIThreadCallbackData(MainWndCallback* cb, int id, void* d)
++      : callback(cb), msg_id(id), data(d) {}
++  MainWndCallback* callback;
++  int msg_id;
++  void* data;
++};
++
++[[maybe_unused]] bool HandleUIThreadCallback(void* data) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++[[maybe_unused]] bool Redraw(void* data) {
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++[[maybe_unused]] bool Draw(GtkWidget* widget, cairo_t* cr, void* data) {
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  return false;
++}
++
++}  // namespace
++
++//
++// GtkMainWnd implementation.
++//
++
++GtkMainWnd::GtkMainWnd(const char* server,
++                       int port,
++                       bool autoconnect,
++                       bool autocall)
++    : window_(NULL),
++      draw_area_(NULL),
++      vbox_(NULL),
++      server_edit_(NULL),
++      port_edit_(NULL),
++      peer_list_(NULL),
++      callback_(NULL),
++      server_(server),
++      autoconnect_(autoconnect),
++      autocall_(autocall) {
++  char buffer[10];
++  snprintf(buffer, sizeof(buffer), "%i", port);
++  port_ = buffer;
++}
++
++GtkMainWnd::~GtkMainWnd() {
++  RTC_DCHECK(!IsWindow());
++}
++
++void GtkMainWnd::RegisterObserver(MainWndCallback* callback) {
++  callback_ = callback;
++}
++
++bool GtkMainWnd::IsWindow() {
++  return _is_window;
++}
++
++void GtkMainWnd::MessageBox(const char* caption,
++                            const char* text,
++                            bool is_error) {
++RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++MainWindow::UI GtkMainWnd::current_ui() {
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  return STREAMING;
++}
++
++void GtkMainWnd::StartLocalRenderer(webrtc::VideoTrackInterface* local_video) {
++  local_renderer_.reset(new VideoRenderer(this, local_video));
++}
++
++void GtkMainWnd::StopLocalRenderer() {
++  local_renderer_.reset();
++}
++
++void GtkMainWnd::StartRemoteRenderer(
++    webrtc::VideoTrackInterface* remote_video) {
++  remote_renderer_.reset(new VideoRenderer(this, remote_video));
++}
++
++void GtkMainWnd::StopRemoteRenderer() {
++  remote_renderer_.reset();
++}
++
++void GtkMainWnd::QueueUIThreadCallback(int msg_id, void* data) {
++RTC_LOG(LS_INFO) << __FUNCTION__;
++}
++
++bool GtkMainWnd::Create() {
++  RTC_DCHECK(window_ == NULL);
++RTC_LOG(LS_INFO) << __FUNCTION__;
++std::thread th{[this](){
++  std::string line;
++  std::cout<<">>";
++  while (std::getline(std::cin, line)) {
++    if (line == "exit") {
++      OnDestroyed(nullptr, nullptr);
++      break;
++    } else if (line.rfind("connect ", 0) == 0) {
++      std::istringstream iss(line);
++      std::string cmd, ip, port_str;
++      
++      if (iss >> cmd >> ip >> port_str) {
++        // Successfully parsed all 4 parts
++        int port = std::stoi(port_str);
++        
++        RTC_LOG(LS_INFO) << "Connect command: ip=" << ip 
++                         << " port=" << port;
++        
++        // Use the parsed values
++        server_ = ip;
++        thread_callbacks_.push_back([this, port](){
++          callback_->StartLogin(server_, port);
++        });
++        
++        // You can also use peer_id as needed
++      } else {
++        std::cout << "Usage: connect <ip> <port> <id>" << std::endl;
++      }
++    }
++    std::cout<<">>";
++  }
++}};
++th.detach();
++  return true;
++}
++
++bool GtkMainWnd::Destroy() {
++  if (!IsWindow())
++    return false;
++
++  return true;
++}
++
++void GtkMainWnd::SwitchToConnectUI() {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++
++  RTC_DCHECK(IsWindow());
++  RTC_DCHECK(vbox_ == NULL);
++
++}
++
++void GtkMainWnd::SwitchToPeerList(const Peers& peers) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++
++
++  AddToList(peer_list_, "List of currently connected peers:", -1);
++  for (Peers::const_iterator i = peers.begin(); i != peers.end(); ++i)
++    AddToList(peer_list_, i->second.c_str(), i->first);
++
++}
++
++void GtkMainWnd::SwitchToStreamingUI() {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++
++  RTC_DCHECK(draw_area_ == NULL);
++
++}
++
++void GtkMainWnd::OnDestroyed(GtkWidget* widget, GdkEvent* event) {
++  RTC_LOG(LS_INFO) << __FUNCTION__;
++  callback_->Close();
++  window_ = NULL;
++  draw_area_ = NULL;
++  vbox_ = NULL;
++  server_edit_ = NULL;
++  port_edit_ = NULL;
++  peer_list_ = NULL;
++  _is_window = false;
++}
++
++void GtkMainWnd::OnClicked(GtkWidget* widget) {
++  // Make the connect button insensitive, so that it cannot be clicked more than
++  // once.  Now that the connection includes auto-retry, it should not be
++  // necessary to click it more than once.
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  int port = 8888;
++  callback_->StartLogin(server_, port);
++}
++
++void GtkMainWnd::OnKeyPress(GtkWidget* widget, GdkEventKey* key) {
++RTC_LOG(LS_INFO) << __FUNCTION__;}
++
++void GtkMainWnd::OnRowActivated(GtkTreeView* tree_view,
++                                GtkTreePath* path,
++                                GtkTreeViewColumn* column) {
++}
++
++void GtkMainWnd::OnRedraw() {
++}
++
++void GtkMainWnd::Draw(GtkWidget* widget, cairo_t* cr) {
++}
++
++GtkMainWnd::VideoRenderer::VideoRenderer(
++    GtkMainWnd* main_wnd,
++    webrtc::VideoTrackInterface* track_to_render)
++    : width_(0),
++      height_(0),
++      main_wnd_(main_wnd),
++      rendered_track_(track_to_render) {
++  rendered_track_->AddOrUpdateSink(this, webrtc::VideoSinkWants());
++}
++
++GtkMainWnd::VideoRenderer::~VideoRenderer() {
++  rendered_track_->RemoveSink(this);
++}
++
++void GtkMainWnd::VideoRenderer::SetSize(int width, int height) {
++}
++
++void GtkMainWnd::VideoRenderer::OnFrame(const webrtc::VideoFrame& video_frame) {
++}
+diff -urN examples/peerconnection/client/linux/cli_wnd.h libwebrtc/examples/peerconnection/client/linux/cli_wnd.h
+--- examples/peerconnection/client/linux/cli_wnd.h	1970-01-01 00:00:00.000000000 +0000
++++ libwebrtc/examples/peerconnection/client/linux/cli_wnd.h	2026-02-18 05:59:48.205487800 +0000
+@@ -0,0 +1,133 @@
++/*
++ *  Copyright 2012 The WebRTC Project Authors. All rights reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef EXAMPLES_PEERCONNECTION_CLIENT_LINUX_CLI_WND_H_
++#define EXAMPLES_PEERCONNECTION_CLIENT_LINUX_CLI_WND_H_
++
++#include <stdint.h>
++
++#include <memory>
++#include <string>
++#include <functional>
++
++#include "api/array_view.h"
++#include "api/media_stream_interface.h"
++#include "api/scoped_refptr.h"
++#include "api/video/video_frame.h"
++#include "api/video/video_sink_interface.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
++#include "rtc_base/buffer.h"
++
++// Forward declarations.
++struct GtkWidget{};
++union  GdkEvent{};
++struct  GdkEventKey{};
++struct  GtkTreeView{};
++struct  GtkTreePath{};
++struct  GtkTreeViewColumn{};
++struct  cairo_t{};
++
++// Implements the main UI of the peer connection client.
++// This is functionally equivalent to the MainWnd class in the Windows
++// implementation.
++class GtkMainWnd : public MainWindow {
++ public:
++  GtkMainWnd(const char* server, int port, bool autoconnect, bool autocall);
++  ~GtkMainWnd();
++
++  virtual void RegisterObserver(MainWndCallback* callback);
++  virtual bool IsWindow();
++  virtual void SwitchToConnectUI();
++  virtual void SwitchToPeerList(const Peers& peers);
++  virtual void SwitchToStreamingUI();
++  virtual void MessageBox(const char* caption, const char* text, bool is_error);
++  virtual MainWindow::UI current_ui();
++  virtual void StartLocalRenderer(webrtc::VideoTrackInterface* local_video);
++  virtual void StopLocalRenderer();
++  virtual void StartRemoteRenderer(webrtc::VideoTrackInterface* remote_video);
++  virtual void StopRemoteRenderer();
++
++  virtual void QueueUIThreadCallback(int msg_id, void* data);
++
++  // Creates and shows the main window with the |Connect UI| enabled.
++  bool Create();
++
++  // Destroys the window.  When the window is destroyed, it ends the
++  // main message loop.
++  bool Destroy();
++
++  // Callback for when the main window is destroyed.
++  void OnDestroyed(GtkWidget* widget, GdkEvent* event);
++
++  // Callback for when the user clicks the "Connect" button.
++  void OnClicked(GtkWidget* widget);
++
++  // Callback for keystrokes.  Used to capture Esc and Return.
++  void OnKeyPress(GtkWidget* widget, GdkEventKey* key);
++
++  // Callback when the user double clicks a peer in order to initiate a
++  // connection.
++  void OnRowActivated(GtkTreeView* tree_view,
++                      GtkTreePath* path,
++                      GtkTreeViewColumn* column);
++
++  void OnRedraw();
++
++  void Draw(GtkWidget* widget, cairo_t* cr);
++  std::list<std::function<void()>> thread_callbacks_;
++
++ protected:
++  class VideoRenderer : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
++   public:
++    VideoRenderer(GtkMainWnd* main_wnd,
++                  webrtc::VideoTrackInterface* track_to_render);
++    virtual ~VideoRenderer();
++
++    // VideoSinkInterface implementation
++    void OnFrame(const webrtc::VideoFrame& frame) override;
++
++    webrtc::ArrayView<const uint8_t> image() const { return image_; }
++
++    int width() const { return width_; }
++
++    int height() const { return height_; }
++
++   protected:
++    void SetSize(int width, int height);
++    webrtc::Buffer image_;
++    int width_;
++    int height_;
++    GtkMainWnd* main_wnd_;
++    webrtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
++  };
++
++ protected:
++  GtkWidget* window_;     // Our main window.
++  GtkWidget* draw_area_;  // The drawing surface for rendering video streams.
++  GtkWidget* vbox_;       // Container for the Connect UI.
++  GtkWidget* server_edit_;
++  GtkWidget* port_edit_;
++  GtkWidget* peer_list_;  // The list of peers.
++  MainWndCallback* callback_;
++  std::string server_;
++  std::string port_;
++  bool autoconnect_;
++  bool autocall_;
++  std::unique_ptr<VideoRenderer> local_renderer_;
++  std::unique_ptr<VideoRenderer> remote_renderer_;
++  int width_ = 0;
++  int height_ = 0;
++  webrtc::Buffer draw_buffer_;
++  int draw_buffer_size_;
++  bool _is_window{true};
++};
++
++#endif  // EXAMPLES_PEERCONNECTION_CLIENT_LINUX_CLI_WND_H_
+diff -urN examples/peerconnection/client/linux/main.cc libwebrtc/examples/peerconnection/client/linux/main.cc
+--- examples/peerconnection/client/linux/main.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/linux/main.cc	2026-02-18 05:10:44.595522700 +0000
+@@ -14,10 +14,10 @@
+ 
+ #include "absl/flags/parse.h"
+ #include "api/scoped_refptr.h"
+-#include "examples/peerconnection/client/conductor.h"
+-#include "examples/peerconnection/client/flag_defs.h"
+-#include "examples/peerconnection/client/linux/main_wnd.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/conductor.h"
++#include "libwebrtc/examples/peerconnection/client/flag_defs.h"
++#include "libwebrtc/examples/peerconnection/client/linux/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "rtc_base/physical_socket_server.h"
+ #include "rtc_base/ssl_adapter.h"
+ #include "rtc_base/thread.h"
+@@ -106,11 +106,13 @@
+   auto conductor = webrtc::make_ref_counted<Conductor>(&client, &wnd);
+   socket_server.set_client(&client);
+   socket_server.set_conductor(conductor.get());
+-
++RTC_LOG(LS_INFO) << __FUNCTION__;
+   thread.Run();
++  RTC_LOG(LS_INFO) << __FUNCTION__;
+ 
+   // gtk_main();
+   wnd.Destroy();
++  RTC_LOG(LS_INFO) << __FUNCTION__;
+ 
+   // TODO(henrike): Run the Gtk main loop to tear down the connection.
+   /*
+diff -urN examples/peerconnection/client/linux/main_cli.cc libwebrtc/examples/peerconnection/client/linux/main_cli.cc
+--- examples/peerconnection/client/linux/main_cli.cc	1970-01-01 00:00:00.000000000 +0000
++++ libwebrtc/examples/peerconnection/client/linux/main_cli.cc	2026-02-18 06:01:07.830762100 +0000
+@@ -0,0 +1,110 @@
++/*
++ *  Copyright 2012 The WebRTC Project Authors. All rights reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "absl/flags/parse.h"
++#include "api/scoped_refptr.h"
++#include "libwebrtc/examples/peerconnection/client/conductor.h"
++#include "libwebrtc/examples/peerconnection/client/flag_defs.h"
++#include "libwebrtc/examples/peerconnection/client/linux/cli_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
++#include "rtc_base/physical_socket_server.h"
++#include "rtc_base/ssl_adapter.h"
++#include "rtc_base/thread.h"
++#include "system_wrappers/include/field_trial.h"
++#include "test/field_trial.h"
++
++class CustomSocketServer : public webrtc::PhysicalSocketServer {
++ public:
++  explicit CustomSocketServer(GtkMainWnd* wnd)
++      : wnd_(wnd), conductor_(NULL), client_(NULL) {}
++  virtual ~CustomSocketServer() {}
++
++  void SetMessageQueue(webrtc::Thread* queue) override {
++    message_queue_ = queue;
++  }
++
++  void set_client(PeerConnectionClient* client) { client_ = client; }
++  void set_conductor(Conductor* conductor) { conductor_ = conductor; }
++
++  // Override so that we can also pump the GTK message loop.
++  // This function never waits.
++  bool Wait(webrtc::TimeDelta max_wait_duration, bool process_io) override {
++    // Pump GTK events.
++    // TODO(henrike): We really should move either the socket server or UI to a
++    // different thread.  Alternatively we could look at merging the two loops
++    // by implementing a dispatcher for the socket server and/or use
++    // g_main_context_set_poll_func.
++    while(!wnd_->thread_callbacks_.empty()){
++      auto callback = wnd_->thread_callbacks_.front();
++      wnd_->thread_callbacks_.pop_front();
++      callback();
++    }
++    if (!wnd_->IsWindow() && !conductor_->connection_active() &&
++        client_ != NULL && !client_->is_connected()) {
++      message_queue_->Quit();
++    }
++    return webrtc::PhysicalSocketServer::Wait(webrtc::TimeDelta::Zero(),
++                                              process_io);
++  }
++
++ protected:
++  webrtc::Thread* message_queue_;
++  GtkMainWnd* wnd_;
++  Conductor* conductor_;
++  PeerConnectionClient* client_;
++};
++
++int main(int argc, char* argv[]) {
++
++  absl::ParseCommandLine(argc, argv);
++
++  // InitFieldTrialsFromString stores the char*, so the char array must outlive
++  // the application.
++  const std::string forced_field_trials =
++      absl::GetFlag(FLAGS_force_fieldtrials);
++  webrtc::field_trial::InitFieldTrialsFromString(forced_field_trials.c_str());
++
++  // Abort if the user specifies a port that is outside the allowed
++  // range [1, 65535].
++  if ((absl::GetFlag(FLAGS_port) < 1) || (absl::GetFlag(FLAGS_port) > 65535)) {
++    printf("Error: %i is not a valid port.\n", absl::GetFlag(FLAGS_port));
++    return -1;
++  }
++
++  const std::string server = absl::GetFlag(FLAGS_server);
++  GtkMainWnd wnd(server.c_str(), absl::GetFlag(FLAGS_port),
++                 absl::GetFlag(FLAGS_autoconnect),
++                 absl::GetFlag(FLAGS_autocall));
++  wnd.Create();
++
++  CustomSocketServer socket_server(&wnd);
++  webrtc::AutoSocketServerThread thread(&socket_server);
++
++  webrtc::InitializeSSL();
++  // Must be constructed after we set the socketserver.
++  PeerConnectionClient client;
++  auto conductor = webrtc::make_ref_counted<Conductor>(&client, &wnd);
++  socket_server.set_client(&client);
++  socket_server.set_conductor(conductor.get());
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  thread.Run();
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  // gtk_main();
++  wnd.Destroy();
++RTC_LOG(LS_INFO) << __FUNCTION__;
++  // TODO(henrike): Run the Gtk main loop to tear down the connection.
++  /*
++  while (gtk_events_pending()) {
++    gtk_main_iteration();
++  }
++  */
++  webrtc::CleanupSSL();
++  return 0;
++}
+diff -urN examples/peerconnection/client/linux/main_wnd.cc libwebrtc/examples/peerconnection/client/linux/main_wnd.cc
+--- examples/peerconnection/client/linux/main_wnd.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/linux/main_wnd.cc	2026-02-18 05:10:43.626853700 +0000
+@@ -8,7 +8,7 @@
+  *  be found in the AUTHORS file in the root of the source tree.
+  */
+ 
+-#include "examples/peerconnection/client/linux/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/linux/main_wnd.h"
+ 
+ #include <cairo.h>
+ #include <gdk/gdk.h>
+@@ -32,8 +32,8 @@
+ #include "api/video/video_frame_buffer.h"
+ #include "api/video/video_rotation.h"
+ #include "api/video/video_source_interface.h"
+-#include "examples/peerconnection/client/main_wnd.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "rtc_base/checks.h"
+ #include "rtc_base/logging.h"
+ #include "third_party/libyuv/include/libyuv/convert_from.h"
+diff -urN examples/peerconnection/client/linux/main_wnd.h libwebrtc/examples/peerconnection/client/linux/main_wnd.h
+--- examples/peerconnection/client/linux/main_wnd.h	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/linux/main_wnd.h	2026-02-18 05:10:44.084573200 +0000
+@@ -21,8 +21,8 @@
+ #include "api/scoped_refptr.h"
+ #include "api/video/video_frame.h"
+ #include "api/video/video_sink_interface.h"
+-#include "examples/peerconnection/client/main_wnd.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "rtc_base/buffer.h"
+ 
+ // Forward declarations.
+diff -urN examples/peerconnection/client/main.cc libwebrtc/examples/peerconnection/client/main.cc
+--- examples/peerconnection/client/main.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/main.cc	2026-02-18 05:10:41.285592000 +0000
+@@ -18,10 +18,10 @@
+ #include <vector>
+ 
+ #include "absl/flags/parse.h"
+-#include "examples/peerconnection/client/conductor.h"
+-#include "examples/peerconnection/client/flag_defs.h"
+-#include "examples/peerconnection/client/main_wnd.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/conductor.h"
++#include "libwebrtc/examples/peerconnection/client/flag_defs.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "rtc_base/checks.h"
+ #include "rtc_base/ssl_adapter.h"
+ #include "rtc_base/string_utils.h"  // For ToUtf8
+diff -urN examples/peerconnection/client/main_wnd.cc libwebrtc/examples/peerconnection/client/main_wnd.cc
+--- examples/peerconnection/client/main_wnd.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/main_wnd.cc	2026-02-18 05:10:38.987243400 +0000
+@@ -8,12 +8,12 @@
+  *  be found in the AUTHORS file in the root of the source tree.
+  */
+ 
+-#include "examples/peerconnection/client/main_wnd.h"
++#include "libwebrtc/examples/peerconnection/client/main_wnd.h"
+ 
+ #include <math.h>
+ 
+ #include "api/video/i420_buffer.h"
+-#include "examples/peerconnection/client/defaults.h"
++#include "libwebrtc/examples/peerconnection/client/defaults.h"
+ #include "rtc_base/arraysize.h"
+ #include "rtc_base/checks.h"
+ #include "rtc_base/logging.h"
+diff -urN examples/peerconnection/client/main_wnd.h libwebrtc/examples/peerconnection/client/main_wnd.h
+--- examples/peerconnection/client/main_wnd.h	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/main_wnd.h	2026-02-18 05:10:40.756798500 +0000
+@@ -17,7 +17,7 @@
+ 
+ #include "api/media_stream_interface.h"
+ #include "api/video/video_frame.h"
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ #include "media/base/media_channel.h"
+ #include "media/base/video_common.h"
+ #if defined(WEBRTC_WIN)
+diff -urN examples/peerconnection/client/peer_connection_client.cc libwebrtc/examples/peerconnection/client/peer_connection_client.cc
+--- examples/peerconnection/client/peer_connection_client.cc	2026-02-16 06:15:21.631038068 +0000
++++ libwebrtc/examples/peerconnection/client/peer_connection_client.cc	2026-02-18 05:10:42.071262900 +0000
+@@ -8,10 +8,10 @@
+  *  be found in the AUTHORS file in the root of the source tree.
+  */
+ 
+-#include "examples/peerconnection/client/peer_connection_client.h"
++#include "libwebrtc/examples/peerconnection/client/peer_connection_client.h"
+ 
+ #include "api/units/time_delta.h"
+-#include "examples/peerconnection/client/defaults.h"
++#include "libwebrtc/examples/peerconnection/client/defaults.h"
+ #include "rtc_base/async_dns_resolver.h"
+ #include "rtc_base/checks.h"
+ #include "rtc_base/logging.h"

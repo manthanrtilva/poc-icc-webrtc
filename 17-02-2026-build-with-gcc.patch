@@ -1,0 +1,596 @@
+diff --git a/examples/BUILD.gn b/examples/BUILD.gn
+index 69022724e4..b21302e47c 100644
+--- a/examples/BUILD.gn
++++ b/examples/BUILD.gn
+@@ -49,11 +49,13 @@ group("examples") {
+   if (is_linux || is_chromeos || is_win) {
+     deps += [
+       ":peerconnection_server",
+-      ":stunserver",
+-      ":turnserver",
++#      ":stunserver",
++#      ":turnserver",
+     ]
+     if (current_os != "winuwp") {
+       deps += [ ":peerconnection_client" ]
++      deps += [ ":peerconnection_client2" ]
++      
+     }
+   }
+ }
+@@ -788,6 +790,103 @@ if (is_linux || is_chromeos || is_win) {
+     ]
+   }
+ 
++  rtc_executable("peerconnection_client2") {
++    testonly = true
++    sources = [
++      "peerconnection2/main.cc",
++      "peerconnection2/peer_connection_client.cc",
++      "peerconnection2/conductor.cc",
++      "peerconnection2/cli_wnd.cc",
++    ]
++
++    deps = [
++      "../api:array_view",
++      "../api:async_dns_resolver",
++      "../api:audio_options_api",
++      "../api:create_frame_generator",
++      "../api:create_peerconnection_factory",
++      "../api:enable_media",
++      "../api:libjingle_peerconnection_api",
++      "../api:make_ref_counted",
++      "../api:media_stream_interface",
++      "../api:rtc_error",
++      "../api:rtp_sender_interface",
++      "../api:scoped_refptr",
++      "../api/audio:audio_device",
++      "../api/audio:audio_mixer_api",
++      "../api/audio:audio_processing",
++      "../api/audio_codecs:audio_codecs_api",
++      "../api/task_queue",
++      "../api/task_queue:default_task_queue_factory",
++      "../api/task_queue:pending_task_safety_flag",
++      "../api/units:time_delta",
++      "../api/video:video_frame",
++      "../api/video:video_rtp_headers",
++      "../api/video_codecs:video_codecs_api",
++      "../media:media_channel",
++      "../media:video_common",
++      "../p2p:connection",
++      "../p2p:port_allocator",
++      "../pc:video_track_source",
++      "../rtc_base:async_dns_resolver",
++      "../rtc_base:buffer",
++      "../rtc_base:checks",
++      "../rtc_base:logging",
++      "../rtc_base:macromagic",
++      "../rtc_base:net_helpers",
++      "../rtc_base:refcount",
++      "../rtc_base:rtc_certificate_generator",
++      "../rtc_base:ssl_adapter",
++      "../rtc_base:stringutils",
++      "../rtc_base:threading",
++      "../rtc_base/third_party/sigslot",
++      "../system_wrappers",
++      "../system_wrappers:field_trial",
++      "../test:field_trial",
++      "../test:frame_generator_capturer",
++      "../test:platform_video_capturer",
++      "../test:rtp_test_utils",
++      "../test:test_video_capturer",
++      "//third_party/abseil-cpp/absl/memory",
++      "//third_party/jsoncpp",
++    ]
++    if (is_linux || is_chromeos) {
++      sources += [
++      ]
++      cflags = [ "-Wno-deprecated-declarations" ]
++      libs = [
++      ]
++    }
++
++    deps += [
++      "../api:libjingle_peerconnection_api",
++      "../api/audio_codecs:builtin_audio_decoder_factory",
++      "../api/audio_codecs:builtin_audio_encoder_factory",
++      "../api/video:video_frame",
++      "../api/video:video_rtp_headers",
++      "../api/video_codecs:video_decoder_factory_template",
++      "../api/video_codecs:video_decoder_factory_template_dav1d_adapter",
++      "../api/video_codecs:video_decoder_factory_template_libvpx_vp8_adapter",
++      "../api/video_codecs:video_decoder_factory_template_libvpx_vp9_adapter",
++      "../api/video_codecs:video_decoder_factory_template_open_h264_adapter",
++      "../api/video_codecs:video_encoder_factory_template",
++      "../api/video_codecs:video_encoder_factory_template_libaom_av1_adapter",
++      "../api/video_codecs:video_encoder_factory_template_libvpx_vp8_adapter",
++      "../api/video_codecs:video_encoder_factory_template_libvpx_vp9_adapter",
++      "../api/video_codecs:video_encoder_factory_template_open_h264_adapter",
++      "../media:rtc_audio_video",
++      "../modules/audio_device",
++      "../modules/audio_processing",
++      "../modules/video_capture:video_capture_module",
++      "../pc:libjingle_peerconnection",
++      "../rtc_base:rtc_json",
++      "../test:video_test_common",
++      "//third_party/abseil-cpp/absl/flags:flag",
++      "//third_party/abseil-cpp/absl/flags:parse",
++      "//third_party/libyuv",
++    ]
++  }
++
+   rtc_executable("peerconnection_server") {
+     testonly = true
+     sources = [
+diff --git a/p2p/base/connection.cc b/p2p/base/connection.cc
+index e2ccfaed53..37b21a96e7 100644
+--- a/p2p/base/connection.cc
++++ b/p2p/base/connection.cc
+@@ -284,7 +284,7 @@ const Candidate& Connection::remote_candidate() const {
+ 
+ const Network* Connection::network() const {
+   RTC_DCHECK(port_) << ToDebugId() << ": port_ null in network()";
+-  return port()->Network();
++  return port()->Network1();
+ }
+ 
+ int Connection::generation() const {
+@@ -1094,7 +1094,7 @@ std::unique_ptr<IceMessage> Connection::BuildPingRequest(
+       port()->CreateStunUsername(remote_candidate_.username())));
+   message->AddAttribute(std::make_unique<StunUInt32Attribute>(
+       STUN_ATTR_GOOG_NETWORK_INFO,
+-      (port_->Network()->id() << 16) | port_->network_cost()));
++      (port_->Network1()->id() << 16) | port_->network_cost()));
+ 
+   if (field_trials_->piggyback_ice_check_acknowledgement &&
+       last_ping_id_received_) {
+@@ -1388,7 +1388,7 @@ std::string Connection::ToString() const {
+     // the names with a hash (rhyming with trash).
+     ss << ":#:#:";
+   } else {
+-    ss << ":" << port_->content_name() << ":" << port_->Network()->ToString()
++    ss << ":" << port_->content_name() << ":" << port_->Network1()->ToString()
+        << ":";
+   }
+ 
+@@ -1429,7 +1429,7 @@ const IceCandidatePairDescription& Connection::ToLogDescription() {
+   }
+   const Candidate& local = local_candidate();
+   const Candidate& remote = remote_candidate();
+-  const Network* network = port()->Network();
++  const Network* network = port()->Network1();
+   log_description_ = IceCandidatePairDescription(
+       GetRtcEventLogCandidateType(local), GetRtcEventLogCandidateType(remote));
+   log_description_->local_relay_protocol =
+diff --git a/p2p/base/port.cc b/p2p/base/port.cc
+index 5c78a04092..585cb8abe2 100644
+--- a/p2p/base/port.cc
++++ b/p2p/base/port.cc
+@@ -156,7 +156,7 @@ Port::~Port() {
+ IceCandidateType Port::Type() const {
+   return type_;
+ }
+-const Network* Port::Network() const {
++const Network* Port::Network1() const {
+   return network_;
+ }
+ 
+@@ -937,7 +937,7 @@ const std::string& Port::username_fragment() const {
+ 
+ void Port::CopyPortInformationToPacketInfo(PacketInfo* info) const {
+   info->protocol = ConvertProtocolTypeToPacketInfoProtocolType(GetProtocol());
+-  info->network_id = Network()->id();
++  info->network_id = Network1()->id();
+ }
+ 
+ }  // namespace webrtc
+diff --git a/p2p/base/port.h b/p2p/base/port.h
+index 522fc9329e..597411a8b5 100644
+--- a/p2p/base/port.h
++++ b/p2p/base/port.h
+@@ -188,7 +188,7 @@ class RTC_EXPORT Port : public PortInterface, public sigslot::has_slots<> {
+   // conflict in the value of the 2-tuple, make sure that the implementation
+   // that relies on this 2-tuple for RTTI is properly changed.
+   IceCandidateType Type() const override;
+-  const ::webrtc::Network* Network() const override;
++  const ::webrtc::Network* Network1() const override;
+ 
+   // Methods to set/get ICE role and tiebreaker values.
+   IceRole GetIceRole() const override;
+diff --git a/p2p/base/port_interface.h b/p2p/base/port_interface.h
+index 93a3a252ee..0522cb9da0 100644
+--- a/p2p/base/port_interface.h
++++ b/p2p/base/port_interface.h
+@@ -55,7 +55,7 @@ class PortInterface {
+   virtual ~PortInterface();
+ 
+   virtual IceCandidateType Type() const = 0;
+-  virtual const Network* Network() const = 0;
++  virtual const Network* Network1() const = 0;
+ 
+   // Methods to set/get ICE role and tiebreaker values.
+   virtual void SetIceRole(IceRole role) = 0;
+diff --git a/p2p/base/stun_port.cc b/p2p/base/stun_port.cc
+index 63105bec4b..ba6e3c7004 100644
+--- a/p2p/base/stun_port.cc
++++ b/p2p/base/stun_port.cc
+@@ -117,7 +117,7 @@ class StunBindingRequest : public StunRequest {
+   void OnTimeout() override {
+     RTC_LOG(LS_ERROR) << "Binding request timed out from "
+                       << port_->GetLocalAddress().ToSensitiveString() << " ("
+-                      << port_->Network()->name() << ")";
++                      << port_->Network1()->name() << ")";
+     port_->OnStunBindingOrResolveRequestFailed(
+         server_addr_, STUN_ERROR_SERVER_NOT_REACHABLE,
+         "STUN binding request timed out.");
+@@ -214,7 +214,7 @@ bool UDPPort::Init() {
+   if (!SharedSocket()) {
+     RTC_DCHECK(socket_ == nullptr);
+     socket_ = socket_factory()->CreateUdpSocket(
+-        SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
++        SocketAddress(Network1()->GetBestIP(), 0), min_port(), max_port());
+     if (!socket_) {
+       RTC_LOG(LS_WARNING) << ToString() << ": UDP socket creation failed";
+       return false;
+@@ -444,7 +444,7 @@ void UDPPort::ResolveStunAddress(const SocketAddress& stun_addr) {
+ 
+   RTC_LOG(LS_INFO) << ToString() << ": Starting STUN host lookup for "
+                    << stun_addr.ToSensitiveString();
+-  resolver_->Resolve(stun_addr, Network()->family(), field_trials());
++  resolver_->Resolve(stun_addr, Network1()->family(), field_trials());
+ }
+ 
+ void UDPPort::OnResolveResult(const SocketAddress& input, int error) {
+@@ -452,7 +452,7 @@ void UDPPort::OnResolveResult(const SocketAddress& input, int error) {
+ 
+   SocketAddress resolved;
+   if (error != 0 || !resolver_->GetResolvedAddress(
+-                        input, Network()->GetBestIP().family(), &resolved)) {
++                        input, Network1()->GetBestIP().family(), &resolved)) {
+     RTC_LOG(LS_WARNING) << ToString()
+                         << ": StunPort: stun host lookup received error "
+                         << error;
+@@ -493,12 +493,12 @@ void UDPPort::SendStunBindingRequest(const SocketAddress& stun_addr) {
+ 
+ bool UDPPort::MaybeSetDefaultLocalAddress(SocketAddress* addr) const {
+   if (!addr->IsAnyIP() || !emit_local_for_anyaddress_ ||
+-      !Network()->default_local_address_provider()) {
++      !Network1()->default_local_address_provider()) {
+     return true;
+   }
+   IPAddress default_address;
+   bool result =
+-      Network()->default_local_address_provider()->GetDefaultLocalAddress(
++      Network1()->default_local_address_provider()->GetDefaultLocalAddress(
+           addr->family(), &default_address);
+   if (!result || default_address.IsNil()) {
+     return false;
+@@ -527,7 +527,7 @@ void UDPPort::OnStunBindingRequestSucceeded(
+   // been added by another STUN server, then discarding the stun address.
+   // For STUN, related address is the local socket address.
+   if ((!SharedSocket() || stun_reflected_addr != socket_->GetLocalAddress() ||
+-       Network()->GetMdnsResponder() != nullptr) &&
++       Network1()->GetMdnsResponder() != nullptr) &&
+       !HasStunCandidateWithAddress(stun_reflected_addr)) {
+     SocketAddress related_address = socket_->GetLocalAddress();
+     // If we can't stamp the related address correctly, empty it to avoid leak.
+diff --git a/p2p/base/tcp_port.cc b/p2p/base/tcp_port.cc
+index 7b3b9fddbf..266b0ef9cc 100644
+--- a/p2p/base/tcp_port.cc
++++ b/p2p/base/tcp_port.cc
+@@ -195,8 +195,8 @@ void TCPPort::PrepareAddress() {
+     // can do.
+     // TODO(deadbeef): We could do something like create a dummy socket just to
+     // see what IP we get. But that may be overkill.
+-    AddAddress(SocketAddress(Network()->GetBestIP(), DISCARD_PORT),
+-               SocketAddress(Network()->GetBestIP(), 0), SocketAddress(),
++    AddAddress(SocketAddress(Network1()->GetBestIP(), DISCARD_PORT),
++               SocketAddress(Network1()->GetBestIP(), 0), SocketAddress(),
+                webrtc::TCP_PROTOCOL_NAME, "", TCPTYPE_ACTIVE_STR,
+                IceCandidateType::kHost, ICE_TYPE_PREFERENCE_HOST_TCP, 0, "",
+                true);
+@@ -304,7 +304,7 @@ void TCPPort::OnNewConnection(AsyncListenSocket* socket,
+ 
+ void TCPPort::TryCreateServerSocket() {
+   listen_socket_ = absl::WrapUnique(socket_factory()->CreateServerTcpSocket(
+-      SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port(),
++      SocketAddress(Network1()->GetBestIP(), 0), min_port(), max_port(),
+       false /* ssl */));
+   if (!listen_socket_) {
+     RTC_LOG(LS_WARNING)
+@@ -371,9 +371,9 @@ TCPConnection::TCPConnection(WeakPtr<Port> tcp_port,
+     // what's being checked in OnConnect, but just DCHECKing here.
+     RTC_LOG(LS_VERBOSE) << ToString() << ": socket ipaddr: "
+                         << socket_->GetLocalAddress().ToSensitiveString()
+-                        << ", port() Network:" << port()->Network()->ToString();
++                        << ", port() Network:" << port()->Network1()->ToString();
+     RTC_DCHECK(absl::c_any_of(
+-        port_->Network()->GetIPs(), [this](const InterfaceAddress& addr) {
++        port_->Network1()->GetIPs(), [this](const InterfaceAddress& addr) {
+           return socket_->GetLocalAddress().ipaddr() == addr;
+         }));
+     ConnectSocketSignals(socket);
+@@ -474,7 +474,7 @@ void TCPConnection::OnConnect(AsyncPacketSocket* socket) {
+   // Note that, aside from minor differences in log statements, this logic is
+   // identical to that in TurnPort.
+   const SocketAddress& socket_address = socket->GetLocalAddress();
+-  if (absl::c_any_of(port_->Network()->GetIPs(),
++  if (absl::c_any_of(port_->Network1()->GetIPs(),
+                      [socket_address](const InterfaceAddress& addr) {
+                        return socket_address.ipaddr() == addr;
+                      })) {
+@@ -485,21 +485,21 @@ void TCPConnection::OnConnect(AsyncPacketSocket* socket) {
+       RTC_LOG(LS_WARNING) << "Socket is bound to the address:"
+                           << socket_address.ipaddr().ToSensitiveString()
+                           << ", rather than an address associated with network:"
+-                          << port_->Network()->ToString()
++                          << port_->Network1()->ToString()
+                           << ". Still allowing it since it's localhost.";
+-    } else if (webrtc::IPIsAny(port_->Network()->GetBestIP())) {
++    } else if (webrtc::IPIsAny(port_->Network1()->GetBestIP())) {
+       RTC_LOG(LS_WARNING)
+           << "Socket is bound to the address:"
+           << socket_address.ipaddr().ToSensitiveString()
+           << ", rather than an address associated with network:"
+-          << port_->Network()->ToString()
++          << port_->Network1()->ToString()
+           << ". Still allowing it since it's the 'any' address"
+              ", possibly caused by multiple_routes being disabled.";
+     } else {
+       RTC_LOG(LS_WARNING) << "Dropping connection as TCP socket bound to IP "
+                           << socket_address.ipaddr().ToSensitiveString()
+                           << ", rather than an address associated with network:"
+-                          << port_->Network()->ToString();
++                          << port_->Network1()->ToString();
+       OnClose(socket, 0);
+       return;
+     }
+@@ -603,7 +603,7 @@ void TCPConnection::CreateOutgoingTcpSocket() {
+   PacketSocketTcpOptions tcp_opts;
+   tcp_opts.opts = opts;
+   socket_.reset(port()->socket_factory()->CreateClientTcpSocket(
+-      SocketAddress(port()->Network()->GetBestIP(), 0),
++      SocketAddress(port()->Network1()->GetBestIP(), 0),
+       remote_candidate().address(), tcp_opts));
+   if (socket_) {
+     RTC_LOG(LS_VERBOSE) << ToString() << ": Connecting from "
+diff --git a/p2p/base/turn_port.cc b/p2p/base/turn_port.cc
+index e0ef1c8384..936c2b2495 100644
+--- a/p2p/base/turn_port.cc
++++ b/p2p/base/turn_port.cc
+@@ -377,7 +377,7 @@ void TurnPort::PrepareAddress() {
+       RTC_LOG(LS_ERROR) << ToString()
+                         << ": IP address family does not match. Server: "
+                         << server_address_.address.family()
+-                        << " local: " << Network()->GetBestIP().family();
++                        << " local: " << Network1()->GetBestIP().family();
+       OnAllocateError(STUN_ERROR_NOT_AN_ERROR,
+                       "TURN server address is incompatible.");
+       return;
+@@ -410,7 +410,7 @@ bool TurnPort::CreateTurnClientSocket() {
+ 
+   if (server_address_.proto == webrtc::PROTO_UDP && !SharedSocket()) {
+     socket_ = socket_factory()->CreateUdpSocket(
+-        SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
++        SocketAddress(Network1()->GetBestIP(), 0), min_port(), max_port());
+   } else if (server_address_.proto == webrtc::PROTO_TCP ||
+              server_address_.proto == webrtc::PROTO_TLS) {
+     RTC_DCHECK(!SharedSocket());
+@@ -432,7 +432,7 @@ bool TurnPort::CreateTurnClientSocket() {
+     tcp_options.tls_elliptic_curves = tls_elliptic_curves_;
+     tcp_options.tls_cert_verifier = tls_cert_verifier_;
+     socket_ = socket_factory()->CreateClientTcpSocket(
+-        SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
++        SocketAddress(Network1()->GetBestIP(), 0), server_address_.address,
+         tcp_options);
+   }
+ 
+@@ -493,7 +493,7 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
+   // Note that, aside from minor differences in log statements, this logic is
+   // identical to that in TcpPort.
+   const SocketAddress& socket_address = socket->GetLocalAddress();
+-  if (absl::c_none_of(Network()->GetIPs(),
++  if (absl::c_none_of(Network1()->GetIPs(),
+                       [socket_address](const InterfaceAddress& addr) {
+                         return socket_address.ipaddr() == addr;
+                       })) {
+@@ -501,21 +501,21 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
+       RTC_LOG(LS_WARNING) << ToString() << ": Socket is bound to the address:"
+                           << socket_address.ToSensitiveNameAndAddressString()
+                           << ", rather than an address associated with network:"
+-                          << Network()->ToString()
++                          << Network1()->ToString()
+                           << ". Still allowing it since it's localhost.";
+-    } else if (webrtc::IPIsAny(Network()->GetBestIP())) {
++    } else if (webrtc::IPIsAny(Network1()->GetBestIP())) {
+       RTC_LOG(LS_WARNING)
+           << ToString() << ": Socket is bound to the address:"
+           << socket_address.ToSensitiveNameAndAddressString()
+           << ", rather than an address associated with network:"
+-          << Network()->ToString()
++          << Network1()->ToString()
+           << ". Still allowing it since it's the 'any' address"
+              ", possibly caused by multiple_routes being disabled.";
+     } else {
+       RTC_LOG(LS_WARNING) << ToString() << ": Socket is bound to the address:"
+                           << socket_address.ToSensitiveNameAndAddressString()
+                           << ", rather than an address associated with network:"
+-                          << Network()->ToString() << ". Discarding TURN port.";
++                          << Network1()->ToString() << ". Discarding TURN port.";
+       OnAllocateError(
+           STUN_ERROR_SERVER_NOT_REACHABLE,
+           "Address not associated with the desired network interface.");
+@@ -845,7 +845,7 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
+     // sockets we need hostname along with resolved address.
+     SocketAddress resolved_address = server_address_.address;
+     if (result.GetError() != 0 ||
+-        !result.GetResolvedAddress(Network()->GetBestIP().family(),
++        !result.GetResolvedAddress(Network1()->GetBestIP().family(),
+                                    &resolved_address)) {
+       RTC_LOG(LS_WARNING) << ToString() << ": TURN host lookup received error "
+                           << result.GetError();
+@@ -857,7 +857,7 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
+     server_address_.address = resolved_address;
+     PrepareAddress();
+   };
+-  resolver_->Start(address, Network()->family(), std::move(callback));
++  resolver_->Start(address, Network1()->family(), std::move(callback));
+ }
+ 
+ void TurnPort::OnSendStunPacket(const void* data,
+diff --git a/p2p/client/basic_port_allocator.cc b/p2p/client/basic_port_allocator.cc
+index ed9db392c4..ba252b64ff 100644
+--- a/p2p/client/basic_port_allocator.cc
++++ b/p2p/client/basic_port_allocator.cc
+@@ -105,8 +105,8 @@ int ComparePort(const Port* a, const Port* b) {
+     return cmp_protocol;
+   }
+ 
+-  int a_family = GetAddressFamilyPriority(a->Network()->GetBestIP().family());
+-  int b_family = GetAddressFamilyPriority(b->Network()->GetBestIP().family());
++  int a_family = GetAddressFamilyPriority(a->Network1()->GetBestIP().family());
++  int b_family = GetAddressFamilyPriority(b->Network1()->GetBestIP().family());
+   return a_family - b_family;
+ }
+ 
+@@ -417,7 +417,7 @@ std::vector<const Network*> BasicPortAllocatorSession::GetFailedNetworks() {
+   for (const PortData& data : ports_) {
+     Port* port = data.port();
+     if (!port->connections().empty()) {
+-      networks_with_connection.insert(port->Network()->name());
++      networks_with_connection.insert(port->Network1()->name());
+     }
+   }
+ 
+@@ -1031,7 +1031,7 @@ Port* BasicPortAllocatorSession::GetBestTurnPortForNetwork(
+   RTC_DCHECK_RUN_ON(network_thread_);
+   Port* best_turn_port = nullptr;
+   for (const PortData& data : ports_) {
+-    if (data.port()->Network()->name() == network_name &&
++    if (data.port()->Network1()->name() == network_name &&
+         data.port()->Type() == IceCandidateType::kRelay && data.ready() &&
+         (!best_turn_port || ComparePort(data.port(), best_turn_port) > 0)) {
+       best_turn_port = data.port();
+@@ -1048,10 +1048,10 @@ bool BasicPortAllocatorSession::PruneNewlyPairableTurnPort(
+   // If an existing turn port is ready on the same network, prune the newly
+   // pairable port.
+   const std::string& network_name =
+-      newly_pairable_port_data->port()->Network()->name();
++      newly_pairable_port_data->port()->Network1()->name();
+ 
+   for (PortData& data : ports_) {
+-    if (data.port()->Network()->name() == network_name &&
++    if (data.port()->Network1()->name() == network_name &&
+         data.port()->Type() == IceCandidateType::kRelay && data.ready() &&
+         &data != newly_pairable_port_data) {
+       RTC_LOG(LS_INFO) << "Port pruned: "
+@@ -1068,7 +1068,7 @@ bool BasicPortAllocatorSession::PruneTurnPorts(Port* newly_pairable_turn_port) {
+   // Note: We determine the same network based only on their network names. So
+   // if an IPv4 address and an IPv6 address have the same network name, they
+   // are considered the same network here.
+-  const std::string& network_name = newly_pairable_turn_port->Network()->name();
++  const std::string& network_name = newly_pairable_turn_port->Network1()->name();
+   Port* best_turn_port = GetBestTurnPortForNetwork(network_name);
+   // `port` is already in the list of ports, so the best port cannot be nullptr.
+   RTC_CHECK(best_turn_port != nullptr);
+@@ -1076,7 +1076,7 @@ bool BasicPortAllocatorSession::PruneTurnPorts(Port* newly_pairable_turn_port) {
+   bool pruned = false;
+   std::vector<PortData*> ports_to_prune;
+   for (PortData& data : ports_) {
+-    if (data.port()->Network()->name() == network_name &&
++    if (data.port()->Network1()->name() == network_name &&
+         data.port()->Type() == IceCandidateType::kRelay && !data.pruned() &&
+         ComparePort(data.port(), best_turn_port) < 0) {
+       pruned = true;
+@@ -1342,7 +1342,7 @@ void AllocationSequence::DisableEquivalentPhases(const Network* network,
+   // Port over PROTO_UDP, namely a TurnPort over UDP.
+   if (absl::c_any_of(session_->ports_,
+                      [this](const BasicPortAllocatorSession::PortData& p) {
+-                       return !p.pruned() && p.port()->Network() == network_ &&
++                       return !p.pruned() && p.port()->Network1() == network_ &&
+                               p.port()->GetProtocol() == webrtc::PROTO_UDP &&
+                               p.port()->Type() == IceCandidateType::kHost &&
+                               !p.error();
+@@ -1353,7 +1353,7 @@ void AllocationSequence::DisableEquivalentPhases(const Network* network,
+   // its type.
+   if (absl::c_any_of(session_->ports_,
+                      [this](const BasicPortAllocatorSession::PortData& p) {
+-                       return !p.pruned() && p.port()->Network() == network_ &&
++                       return !p.pruned() && p.port()->Network1() == network_ &&
+                               p.port()->GetProtocol() == webrtc::PROTO_TCP &&
+                               p.port()->Type() == IceCandidateType::kHost &&
+                               !p.error();
+diff --git a/pc/codec_vendor.h b/pc/codec_vendor.h
+index 1472225a00..ca849d165f 100644
+--- a/pc/codec_vendor.h
++++ b/pc/codec_vendor.h
+@@ -119,7 +119,7 @@ class CodecVendor {
+ class CodecLookupHelper {
+  public:
+   virtual ~CodecLookupHelper() = default;
+-  virtual PayloadTypeSuggester* PayloadTypeSuggester() = 0;
++  virtual PayloadTypeSuggester* PayloadTypeSuggester1() = 0;
+   // Look up the codec vendor to use, depending on context.
+   // This call may get additional arguments in the future, to aid
+   // in selection of the correct context.
+diff --git a/pc/jsep_transport.h b/pc/jsep_transport.h
+index 2840cc2461..0075a3d2b1 100644
+--- a/pc/jsep_transport.h
++++ b/pc/jsep_transport.h
+@@ -204,7 +204,7 @@ class JsepTransport {
+     return rtp_dtls_transport_;
+   }
+ 
+-  scoped_refptr<SctpTransport> SctpTransport() const { return sctp_transport_; }
++  scoped_refptr<SctpTransport> SctpTransport1() const { return sctp_transport_; }
+ 
+   // TODO(bugs.webrtc.org/9719): Delete method, update callers to use
+   // SctpTransport() instead.
+diff --git a/pc/jsep_transport_controller.cc b/pc/jsep_transport_controller.cc
+index 7fb6917c91..bc5daebf40 100644
+--- a/pc/jsep_transport_controller.cc
++++ b/pc/jsep_transport_controller.cc
+@@ -208,7 +208,7 @@ scoped_refptr<SctpTransport> JsepTransportController::GetSctpTransport(
+   if (!jsep_transport) {
+     return nullptr;
+   }
+-  return jsep_transport->SctpTransport();
++  return jsep_transport->SctpTransport1();
+ }
+ 
+ void JsepTransportController::SetIceConfig(const IceConfig& config) {
+diff --git a/pc/media_session.cc b/pc/media_session.cc
+index cd03330175..f2fe11282b 100644
+--- a/pc/media_session.cc
++++ b/pc/media_session.cc
+@@ -1162,7 +1162,7 @@ RTCError MediaSessionDescriptionFactory::AddRtpContentForOffer(
+   RTCErrorOr<std::vector<Codec>> error_or_filtered_codecs =
+       codec_lookup_helper_->GetCodecVendor()->GetNegotiatedCodecsForOffer(
+           media_description_options, session_options, current_content,
+-          *codec_lookup_helper_->PayloadTypeSuggester());
++          *codec_lookup_helper_->PayloadTypeSuggester1());
+   if (!error_or_filtered_codecs.ok()) {
+     return error_or_filtered_codecs.MoveError();
+   }
+@@ -1321,7 +1321,7 @@ RTCError MediaSessionDescriptionFactory::AddRtpContentForAnswer(
+       codec_lookup_helper_->GetCodecVendor()->GetNegotiatedCodecsForAnswer(
+           media_description_options, session_options, offer_rtd, answer_rtd,
+           current_content, offer_content_description->codecs(),
+-          *codec_lookup_helper_->PayloadTypeSuggester());
++          *codec_lookup_helper_->PayloadTypeSuggester1());
+   if (!error_or_filtered_codecs.ok()) {
+     return error_or_filtered_codecs.MoveError();
+   }
+diff --git a/pc/peer_connection.cc b/pc/peer_connection.cc
+index 485a4ed2ef..86385c019e 100644
+--- a/pc/peer_connection.cc
++++ b/pc/peer_connection.cc
+@@ -134,7 +134,7 @@ class CodecLookupHelperForPeerConnection : public CodecLookupHelper {
+                       self_->context()->use_rtx(),
+                       self_->context()->env().field_trials()) {}
+ 
+-  webrtc::PayloadTypeSuggester* PayloadTypeSuggester() override {
++  webrtc::PayloadTypeSuggester* PayloadTypeSuggester1() override {
+     return self_->transport_controller_s();
+   }
+ 
