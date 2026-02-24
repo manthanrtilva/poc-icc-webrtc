@@ -24,8 +24,8 @@
 #include "api/rtp_receiver_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_factory.h"
-#include "peerconnection2/client/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection4/client/main_wnd.h"
+#include "peerconnection4/client/peer_connection_client.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -53,7 +53,7 @@ class Conductor : public webrtc::PeerConnectionObserver,
 
   void StartLogin(const std::string& server, int port) override;
 
- protected:
+  //  protected:
   ~Conductor();
   bool InitializePeerConnection();
   bool ReinitializePeerConnectionForLoopback();

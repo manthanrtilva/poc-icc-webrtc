@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "peerconnection2/client/conductor.h"
+#include "peerconnection5/client/conductor.h"
 
 #include <stddef.h>
 
@@ -53,9 +53,9 @@
 #include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_factory.h"
 #include "pc/video_track_source.h"
-#include "peerconnection2/client/defaults.h"
-#include "peerconnection2/client/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection5/client/defaults.h"
+#include "peerconnection5/client/main_wnd.h"
+#include "peerconnection5/client/peer_connection_client.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/json.h"
@@ -185,7 +185,7 @@ bool Conductor::InitializePeerConnection() {
           webrtc::LibvpxVp9DecoderTemplateAdapter,
           webrtc::OpenH264DecoderTemplateAdapter,
           webrtc::Dav1dDecoderTemplateAdapter>>();
-  // webrtc::EnableMedia(deps);
+  webrtc::EnableMedia(deps);
   task_queue_factory_ = deps.task_queue_factory.get();
   peer_connection_factory_ =
       webrtc::CreateModularPeerConnectionFactory(std::move(deps));
@@ -251,6 +251,10 @@ bool Conductor::CreatePeerConnection() {
 void Conductor::DeletePeerConnection() {
   main_wnd_->StopLocalRenderer();
   main_wnd_->StopRemoteRenderer();
+  if (data_channel_) {
+    data_channel_->UnregisterObserver();
+    data_channel_ = nullptr;
+  }
   peer_connection_ = nullptr;
   peer_connection_factory_ = nullptr;
   peer_id_ = -1;
@@ -490,6 +494,18 @@ void Conductor::ConnectToPeer(int peer_id) {
 
   if (InitializePeerConnection()) {
     peer_id_ = peer_id;
+    // Create the data channel before the offer so it is included in the SDP.
+    webrtc::DataChannelInit dc_config;
+    auto dc_or_error =
+        peer_connection_->CreateDataChannelOrError("chat", &dc_config);
+    if (dc_or_error.ok()) {
+      data_channel_ = dc_or_error.MoveValue();
+      data_channel_->RegisterObserver(this);
+      RTC_LOG(LS_INFO) << "Data channel created for chat";
+    } else {
+      RTC_LOG(LS_ERROR) << "Failed to create data channel: "
+                        << dc_or_error.error().message();
+    }
     peer_connection_->CreateOffer(
         this, webrtc::PeerConnectionInterface::RTCOfferAnswerOptions());
   } else {
@@ -507,11 +523,11 @@ void Conductor::AddTracks() {
           kAudioLabel,
           peer_connection_factory_->CreateAudioSource(webrtc::AudioOptions())
               .get()));
-  // auto result_or_error = peer_connection_->AddTrack(audio_track,
-  // {kStreamId}); if (!result_or_error.ok()) {
-  //   RTC_LOG(LS_ERROR) << "Failed to add audio track to PeerConnection: "
-  //                     << result_or_error.error().message();
-  // }
+  auto result_or_error = peer_connection_->AddTrack(audio_track, {kStreamId});
+  if (!result_or_error.ok()) {
+    RTC_LOG(LS_ERROR) << "Failed to add audio track to PeerConnection: "
+                      << result_or_error.error().message();
+  }
 
   webrtc::scoped_refptr<CapturerTrackSource> video_device =
       CapturerTrackSource::Create(*task_queue_factory_);
@@ -520,11 +536,11 @@ void Conductor::AddTracks() {
         peer_connection_factory_->CreateVideoTrack(video_device, kVideoLabel));
     main_wnd_->StartLocalRenderer(video_track_.get());
 
-    // result_or_error = peer_connection_->AddTrack(video_track_, {kStreamId});
-    // if (!result_or_error.ok()) {
-    //   RTC_LOG(LS_ERROR) << "Failed to add video track to PeerConnection: "
-    //                     << result_or_error.error().message();
-    // }
+    result_or_error = peer_connection_->AddTrack(video_track_, {kStreamId});
+    if (!result_or_error.ok()) {
+      RTC_LOG(LS_ERROR) << "Failed to add video track to PeerConnection: "
+                        << result_or_error.error().message();
+    }
   } else {
     RTC_LOG(LS_ERROR) << "OpenVideoCaptureDevice failed";
   }
@@ -604,21 +620,26 @@ void Conductor::UIThreadCallback(int msg_id, void* data) {
       break;
     }
 
+    case CHAT_MESSAGE_RECEIVED: {
+      std::string* msg = reinterpret_cast<std::string*>(data);
+      main_wnd_->DisplayChatMessage(*msg);
+      delete msg;
+      break;
+    }
+
     default:
       RTC_DCHECK_NOTREACHED();
       break;
   }
 }
-const Peers& Conductor::GetPeers() {
-  return client_->peers();
-}
+
 void Conductor::OnSuccess(webrtc::SessionDescriptionInterface* desc) {
   peer_connection_->SetLocalDescription(
       DummySetSessionDescriptionObserver::Create().get(), desc);
 
   std::string sdp;
   desc->ToString(&sdp);
-  RTC_LOG(LS_INFO) << "sdp: " << sdp;
+  RTC_LOG(LS_INFO) << " Created local session description :" << sdp;
 
   // For loopback test. To save some connecting delay.
   if (loopback_) {
@@ -647,4 +668,40 @@ void Conductor::OnFailure(webrtc::RTCError error) {
 void Conductor::SendMessage(const std::string& json_object) {
   std::string* msg = new std::string(json_object);
   main_wnd_->QueueUIThreadCallback(SEND_MESSAGE_TO_PEER, msg);
+}
+
+void Conductor::OnDataChannel(
+    webrtc::scoped_refptr<webrtc::DataChannelInterface> channel) {
+  RTC_LOG(LS_INFO) << "Data channel received: " << channel->label();
+  if (!data_channel_) {
+    data_channel_ = channel;
+    data_channel_->RegisterObserver(this);
+  } else {
+    RTC_LOG(LS_WARNING) << "Data channel already exists, ignoring.";
+  }
+}
+
+void Conductor::OnStateChange() {
+  RTC_LOG(LS_INFO) << "Data channel state: "
+                   << webrtc::DataChannelInterface::DataStateString(
+                          data_channel_->state());
+}
+
+void Conductor::OnMessage(const webrtc::DataBuffer& buffer) {
+  std::string text(buffer.data.data<char>(), buffer.data.size());
+  RTC_LOG(LS_INFO) << "Data channel message: " << text;
+  std::string* msg = new std::string("Peer: " + text);
+  main_wnd_->QueueUIThreadCallback(CHAT_MESSAGE_RECEIVED, msg);
+}
+
+void Conductor::SendChatMessage(const std::string& message) {
+  if (data_channel_ &&
+      data_channel_->state() == webrtc::DataChannelInterface::kOpen) {
+    webrtc::DataBuffer buffer(message);
+    data_channel_->Send(buffer);
+    std::string* echo = new std::string("Me: " + message);
+    main_wnd_->QueueUIThreadCallback(CHAT_MESSAGE_RECEIVED, echo);
+  } else {
+    RTC_LOG(LS_WARNING) << "Data channel not open, cannot send message";
+  }
 }

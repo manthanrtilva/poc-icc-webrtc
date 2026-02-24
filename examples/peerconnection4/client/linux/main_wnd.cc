@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "peerconnection2/client/linux/main_wnd.h"
+#include "peerconnection4/client/linux/main_wnd.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -26,8 +26,8 @@
 #include "api/video/video_frame_buffer.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_source_interface.h"
-#include "peerconnection2/client/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection4/client/main_wnd.h"
+#include "peerconnection4/client/peer_connection_client.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "third_party/libyuv/include/libyuv/convert_from.h"
@@ -238,20 +238,7 @@ bool GtkMainWnd::Create() {
           task_queue_->PostTask([this] { callback_->DisconnectFromServer(); });
         }
         break;
-      } else if (line.rfind("sc", 0) == 0) {
-        std::string server;
-        int port = 8888;
-        std::istringstream iss(line);
-        std::string cmd;
-        iss >> cmd >> server >> port;
-        if (!server.empty()) {
-          if (task_queue_) {
-            task_queue_->PostTask(
-                [this, server, port] { callback_->StartLogin(server, port); });
-          }
-        } else {
-          RTC_LOG(LS_WARNING) << "Usage: sc <server> <port>";
-        }
+      } else if (line == "offer") {
       } else if (line.rfind("pc", 0) == 0) {
         int pid = -1;
         std::istringstream iss(line);
@@ -371,6 +358,9 @@ void GtkMainWnd::SwitchToPeerList(const Peers& peers) {
   RTC_LOG(LS_INFO) << __FUNCTION__;
   for (auto& a : peers) {
     RTC_LOG(LS_INFO) << a.first << ": " << a.second;
+    if (task_queue_) {
+      task_queue_->PostTask([this, a] { callback_->ConnectToPeer(a.first); });
+    }
   }
 
   // if (!peer_list_) {

@@ -21,26 +21,19 @@
 #include "api/scoped_refptr.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_sink_interface.h"
-#include "peerconnection2/client/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection5/client/main_wnd.h"
+#include "peerconnection5/client/peer_connection_client.h"
 #include "rtc_base/buffer.h"
-#include "rtc_base/thread.h"
-// #include "rtc_base/task_queue.h"
 
 // Forward declarations.
-struct GtkWidget {};
-union GdkEvent {};
-struct GdkEventKey {};
-struct GtkTreeView {};
-struct GtkTreePath {};
-struct GtkTreeViewColumn {};
-struct cairo_t {};
+typedef struct _GtkWidget GtkWidget;
+typedef union _GdkEvent GdkEvent;
+typedef struct _GdkEventKey GdkEventKey;
+typedef struct _GtkTreeView GtkTreeView;
+typedef struct _GtkTreePath GtkTreePath;
+typedef struct _GtkTreeViewColumn GtkTreeViewColumn;
+typedef struct _cairo cairo_t;
 
-#define gboolean bool
-#define gpointer void*
-#define FALSE false
-#define TRUE true
-#define gchar char
 // Implements the main UI of the peer connection client.
 // This is functionally equivalent to the MainWnd class in the Windows
 // implementation.
@@ -48,9 +41,6 @@ class GtkMainWnd : public MainWindow {
  public:
   GtkMainWnd(const char* server, int port, bool autoconnect, bool autocall);
   ~GtkMainWnd();
-  void SetTaskQueue(webrtc::TaskQueueBase* task_queue) {
-    task_queue_ = task_queue;
-  }
 
   virtual void RegisterObserver(MainWndCallback* callback);
   virtual bool IsWindow();
@@ -65,6 +55,7 @@ class GtkMainWnd : public MainWindow {
   virtual void StopRemoteRenderer();
 
   virtual void QueueUIThreadCallback(int msg_id, void* data);
+  void DisplayChatMessage(const std::string& message) override;
 
   // Creates and shows the main window with the |Connect UI| enabled.
   bool Create();
@@ -91,6 +82,8 @@ class GtkMainWnd : public MainWindow {
   void OnRedraw();
 
   void Draw(GtkWidget* widget, cairo_t* cr);
+
+  void OnChatSend(GtkWidget* widget);
 
  protected:
   class VideoRenderer : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
@@ -123,7 +116,10 @@ class GtkMainWnd : public MainWindow {
   GtkWidget* vbox_;       // Container for the Connect UI.
   GtkWidget* server_edit_;
   GtkWidget* port_edit_;
-  GtkWidget* peer_list_;  // The list of peers.
+  GtkWidget* peer_list_;      // The list of peers.
+  GtkWidget* streaming_box_;  // Container for streaming + chat.
+  GtkWidget* chat_view_;      // Text view for incoming/outgoing chat.
+  GtkWidget* chat_entry_;     // Entry field for typing chat messages.
   MainWndCallback* callback_;
   std::string server_;
   std::string port_;
@@ -135,8 +131,6 @@ class GtkMainWnd : public MainWindow {
   int height_ = 0;
   webrtc::Buffer draw_buffer_;
   int draw_buffer_size_;
-  bool is_window_ = true;
-  webrtc::TaskQueueBase* task_queue_;
 };
 
 #endif  // EXAMPLES_PEERCONNECTION_CLIENT_LINUX_MAIN_WND_H_

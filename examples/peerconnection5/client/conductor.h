@@ -24,8 +24,8 @@
 #include "api/rtp_receiver_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_factory.h"
-#include "peerconnection2/client/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection5/client/main_wnd.h"
+#include "peerconnection5/client/peer_connection_client.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -34,6 +34,7 @@ class VideoCaptureModule;
 
 class Conductor : public webrtc::PeerConnectionObserver,
                   public webrtc::CreateSessionDescriptionObserver,
+                  public webrtc::DataChannelObserver,
                   public PeerConnectionClientObserver,
                   public MainWndCallback {
  public:
@@ -43,6 +44,7 @@ class Conductor : public webrtc::PeerConnectionObserver,
     SEND_MESSAGE_TO_PEER,
     NEW_TRACK_ADDED,
     TRACK_REMOVED,
+    CHAT_MESSAGE_RECEIVED,
   };
 
   Conductor(PeerConnectionClient* client, MainWindow* main_wnd);
@@ -50,8 +52,6 @@ class Conductor : public webrtc::PeerConnectionObserver,
   bool connection_active() const;
 
   void Close() override;
-
-  void StartLogin(const std::string& server, int port) override;
 
  protected:
   ~Conductor();
@@ -61,6 +61,11 @@ class Conductor : public webrtc::PeerConnectionObserver,
   void DeletePeerConnection();
   void EnsureStreamingUI();
   void AddTracks();
+
+  // DataChannelObserver implementation.
+  void OnStateChange() override;
+  void OnMessage(const webrtc::DataBuffer& buffer) override;
+  void OnBufferedAmountChange(uint64_t previous_amount) override {}
 
   //
   // PeerConnectionObserver implementation.
@@ -75,9 +80,7 @@ class Conductor : public webrtc::PeerConnectionObserver,
   void OnRemoveTrack(
       webrtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver) override;
   void OnDataChannel(
-      webrtc::scoped_refptr<webrtc::DataChannelInterface> channel) override {
-    RTC_LOG(LS_INFO) << "OnDataChannel: " << channel->label();
-  }
+      webrtc::scoped_refptr<webrtc::DataChannelInterface> channel) override;
   void OnRenegotiationNeeded() override {}
   void OnIceConnectionChange(
       webrtc::PeerConnectionInterface::IceConnectionState new_state) override {}
@@ -108,6 +111,8 @@ class Conductor : public webrtc::PeerConnectionObserver,
   // MainWndCallback implementation.
   //
 
+  void StartLogin(const std::string& server, int port) override;
+
   void DisconnectFromServer() override;
 
   void ConnectToPeer(int peer_id) override;
@@ -115,7 +120,8 @@ class Conductor : public webrtc::PeerConnectionObserver,
   void DisconnectFromCurrentPeer() override;
 
   void UIThreadCallback(int msg_id, void* data) override;
-  const Peers& GetPeers() override;
+
+  void SendChatMessage(const std::string& message) override;
 
   // CreateSessionDescriptionObserver implementation.
   void OnSuccess(webrtc::SessionDescriptionInterface* desc) override;
@@ -136,6 +142,7 @@ class Conductor : public webrtc::PeerConnectionObserver,
   MainWindow* main_wnd_;
   std::deque<std::string*> pending_messages_;
   std::string server_;
+  webrtc::scoped_refptr<webrtc::DataChannelInterface> data_channel_;
 };
 
 #endif  // EXAMPLES_PEERCONNECTION_CLIENT_CONDUCTOR_H_

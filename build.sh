@@ -3,9 +3,11 @@
 cd /workspaces/src/
 PATH="$PATH:/depot_tools"
 export ARCH=x64
-gn gen out/ --args="is_debug=true target_os=\"linux\" target_cpu=\"$ARCH\" is_debug=true rtc_include_tests=false rtc_use_h264=true ffmpeg_branding=\"Chrome\" is_component_build=false use_rtti=true use_custom_libcxx=false rtc_enable_protobuf=false rtc_build_examples=true treat_warnings_as_errors=false"
+clang-format -i `find libwebrtc/ -name '*.cc' -o -name '*.h'`
+# gn gen out/ --args="is_debug=true target_os=\"linux\" target_cpu=\"$ARCH\" is_debug=true rtc_include_tests=false rtc_use_h264=true ffmpeg_branding=\"Chrome\" is_component_build=false use_rtti=true use_custom_libcxx=false rtc_enable_protobuf=false rtc_build_examples=true treat_warnings_as_errors=false"
 ninja -C out/
-
+cp out/pclient5 /workspaces/src/libwebrtc/
+sshpass -p $PASSWORD scp out/pclient5 zti@10.40.1.18:/tmp/
 #  --autoconnect --gui
 # cmake -S /workspaces/libwebrtc/peerclient2/ -B /tmp/build2 -DCMAKE_CXX_COMPILER=/workspaces/src/third_party/llvm-build/Release+Asserts/bin/clang++
 # cmake --build /tmp/build2/

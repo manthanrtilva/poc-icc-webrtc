@@ -20,6 +20,9 @@ group("examples") {
       ":peerconnection_client_gui",
       ":peerconnection_client_cli",
       ":pclient2",
+      ":pclient3",
+      ":pclient4",
+      ":pclient5",
     ]
   }
 }
@@ -143,6 +146,113 @@ if (is_linux || is_chromeos || is_win) {
       cflags = [ "-Wno-deprecated-declarations" ]
       libs = [
       ]
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
+      "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient3") {
+    testonly = true
+    sources = [
+      "peerconnection3/main.cc",
+    ]
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+      "../../test:frame_generator_capturer",
+      "../../test:platform_video_capturer",
+      "../../test:rtp_test_utils",
+      "../../test:test_video_capturer",
+    ]
+    if (is_linux || is_chromeos) {
+      cflags = [ "-Wno-deprecated-declarations" ]
+      libs = [
+      ]
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
+      "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient4") {
+    testonly = true
+    sources = [
+      "peerconnection4/client/conductor.cc",
+      "peerconnection4/client/conductor.h",
+      "peerconnection4/client/defaults.cc",
+      "peerconnection4/client/defaults.h",
+      "peerconnection4/client/peer_connection_client.cc",
+      "peerconnection4/client/peer_connection_client.h",
+    ]
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+      "../../test:frame_generator_capturer",
+      "../../test:platform_video_capturer",
+      "../../test:rtp_test_utils",
+      "../../test:test_video_capturer",
+    ]
+    if (is_linux || is_chromeos) {
+      sources += [
+        "peerconnection4/client/linux/main.cc",
+        "peerconnection4/client/linux/main_wnd.cc",
+        "peerconnection4/client/linux/main_wnd.h",
+      ]
+      cflags = [ "-Wno-deprecated-declarations" ]
+      libs = [
+      ]
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
+      "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient5") {
+    testonly = true
+    sources = [
+      "peerconnection5/client/conductor.cc",
+      "peerconnection5/client/conductor.h",
+      "peerconnection5/client/defaults.cc",
+      "peerconnection5/client/defaults.h",
+      "peerconnection5/client/peer_connection_client.cc",
+      "peerconnection5/client/peer_connection_client.h",
+    ]
+
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+      "../../test:frame_generator_capturer",
+      "../../test:platform_video_capturer",
+      "../../test:rtp_test_utils",
+      "../../test:test_video_capturer",
+    ]
+    if (is_linux || is_chromeos) {
+      sources += [
+        "peerconnection5/client/linux/main.cc",
+        "peerconnection5/client/linux/main_wnd.cc",
+        "peerconnection5/client/linux/main_wnd.h",
+      ]
+      cflags = [ "-Wno-deprecated-declarations" ]
+      libs = [
+        "X11",
+        "Xcomposite",
+        "Xext",
+        "Xrender",
+      ]
+      configs += [ ":gtk_config" ]
     }
 
     deps += [

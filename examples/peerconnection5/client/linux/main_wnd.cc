@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "linux/main_wnd.h"
+#include "peerconnection5/client/linux/main_wnd.h"
 
 #include <cairo.h>
 #include <gdk/gdk.h>
@@ -23,7 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <iostream>
 #include <map>
+#include <thread>
 
 #include "api/media_stream_interface.h"
 #include "api/scoped_refptr.h"
@@ -32,11 +34,11 @@
 #include "api/video/video_frame_buffer.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_source_interface.h"
-#include "libyuv/convert_from.h"
-#include "linux/main_wnd.h"
-#include "peer_connection_client.h"
+#include "peerconnection5/client/main_wnd.h"
+#include "peerconnection5/client/peer_connection_client.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "third_party/libyuv/include/libyuv/convert_from.h"
 
 namespace {
 
@@ -144,6 +146,10 @@ gboolean Draw(GtkWidget* widget, cairo_t* cr, gpointer data) {
   return false;
 }
 
+void OnChatSendCallback(GtkWidget* widget, gpointer data) {
+  reinterpret_cast<GtkMainWnd*>(data)->OnChatSend(widget);
+}
+
 }  // namespace
 
 //
@@ -160,6 +166,9 @@ GtkMainWnd::GtkMainWnd(const char* server,
       server_edit_(NULL),
       port_edit_(NULL),
       peer_list_(NULL),
+      streaming_box_(NULL),
+      chat_view_(NULL),
+      chat_entry_(NULL),
       callback_(NULL),
       server_(server),
       autoconnect_(autoconnect),
@@ -240,7 +249,6 @@ bool GtkMainWnd::Create() {
 
     SwitchToConnectUI();
   }
-
   return window_ != NULL;
 }
 
@@ -313,8 +321,11 @@ void GtkMainWnd::SwitchToPeerList(const Peers& peers) {
       server_edit_ = NULL;
       port_edit_ = NULL;
     } else if (draw_area_) {
-      gtk_widget_destroy(draw_area_);
+      gtk_widget_destroy(streaming_box_);
+      streaming_box_ = NULL;
       draw_area_ = NULL;
+      chat_view_ = NULL;
+      chat_entry_ = NULL;
       draw_buffer_.SetSize(0);
     }
 
@@ -350,9 +361,43 @@ void GtkMainWnd::SwitchToStreamingUI() {
     peer_list_ = NULL;
   }
 
+  // Outer vertical container: video on top, chat panel below.
+  streaming_box_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_container_add(GTK_CONTAINER(window_), streaming_box_);
+
+  // Video drawing area.
   draw_area_ = gtk_drawing_area_new();
-  gtk_container_add(GTK_CONTAINER(window_), draw_area_);
+  gtk_widget_set_size_request(draw_area_, 640, 400);
+  gtk_box_pack_start(GTK_BOX(streaming_box_), draw_area_, TRUE, TRUE, 0);
   g_signal_connect(G_OBJECT(draw_area_), "draw", G_CALLBACK(&::Draw), this);
+
+  // Chat panel.
+  GtkWidget* chat_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_container_set_border_width(GTK_CONTAINER(chat_vbox), 4);
+  gtk_box_pack_start(GTK_BOX(streaming_box_), chat_vbox, FALSE, FALSE, 0);
+
+  // Scrollable message history.
+  GtkWidget* scroll = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scroll, -1, 120);
+  chat_view_ = gtk_text_view_new();
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(chat_view_), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chat_view_), GTK_WRAP_WORD_CHAR);
+  gtk_container_add(GTK_CONTAINER(scroll), chat_view_);
+  gtk_box_pack_start(GTK_BOX(chat_vbox), scroll, TRUE, TRUE, 0);
+
+  // Input row: text entry + send button.
+  GtkWidget* input_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  chat_entry_ = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(chat_entry_), "Type a message...");
+  gtk_box_pack_start(GTK_BOX(input_hbox), chat_entry_, TRUE, TRUE, 0);
+  GtkWidget* send_btn = gtk_button_new_with_label("Send");
+  g_signal_connect(send_btn, "clicked", G_CALLBACK(OnChatSendCallback), this);
+  g_signal_connect(chat_entry_, "activate", G_CALLBACK(OnChatSendCallback),
+                   this);
+  gtk_box_pack_start(GTK_BOX(input_hbox), send_btn, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(chat_vbox), input_hbox, FALSE, FALSE, 0);
 
   gtk_widget_show_all(window_);
 }
@@ -361,6 +406,9 @@ void GtkMainWnd::OnDestroyed(GtkWidget* widget, GdkEvent* event) {
   callback_->Close();
   window_ = NULL;
   draw_area_ = NULL;
+  streaming_box_ = NULL;
+  chat_view_ = NULL;
+  chat_entry_ = NULL;
   vbox_ = NULL;
   server_edit_ = NULL;
   port_edit_ = NULL;
@@ -452,6 +500,29 @@ void GtkMainWnd::Draw(GtkWidget* widget, cairo_t* cr) {
   cairo_rectangle(cr, 0, 0, width_, height_);
   cairo_fill(cr);
   cairo_surface_destroy(surface);
+}
+
+void GtkMainWnd::DisplayChatMessage(const std::string& message) {
+  if (!chat_view_)
+    return;
+  GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chat_view_));
+  GtkTextIter end;
+  gtk_text_buffer_get_end_iter(buffer, &end);
+  gtk_text_buffer_insert(buffer, &end, message.c_str(), -1);
+  gtk_text_buffer_insert(buffer, &end, "\n", -1);
+  // Scroll to the newest message.
+  GtkTextMark* mark = gtk_text_buffer_get_insert(buffer);
+  gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(chat_view_), mark);
+}
+
+void GtkMainWnd::OnChatSend(GtkWidget* widget) {
+  if (!chat_entry_ || !callback_)
+    return;
+  const gchar* text = gtk_entry_get_text(GTK_ENTRY(chat_entry_));
+  if (text && *text) {
+    callback_->SendChatMessage(std::string(text));
+    gtk_entry_set_text(GTK_ENTRY(chat_entry_), "");
+  }
 }
 
 GtkMainWnd::VideoRenderer::VideoRenderer(

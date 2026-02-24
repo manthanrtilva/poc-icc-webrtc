@@ -14,10 +14,10 @@
 
 #include "absl/flags/parse.h"
 #include "api/scoped_refptr.h"
-#include "peerconnection2/client/conductor.h"
-#include "peerconnection2/client/flag_defs.h"
-#include "peerconnection2/client/linux/main_wnd.h"
-#include "peerconnection2/client/peer_connection_client.h"
+#include "peerconnection4/client/conductor.h"
+#include "peerconnection4/client/flag_defs.h"
+#include "peerconnection4/client/linux/main_wnd.h"
+#include "peerconnection4/client/peer_connection_client.h"
 #include "rtc_base/physical_socket_server.h"
 #include "rtc_base/ssl_adapter.h"
 #include "rtc_base/thread.h"
@@ -62,6 +62,8 @@ class CustomSocketServer : public webrtc::PhysicalSocketServer {
   Conductor* conductor_;
   PeerConnectionClient* client_;
 };
+#include <chrono>
+#include <thread>
 
 int main(int argc, char* argv[]) {
   //   gtk_init(&argc, &argv);
@@ -100,19 +102,26 @@ int main(int argc, char* argv[]) {
 
   CustomSocketServer socket_server(&wnd);
   webrtc::AutoSocketServerThread thread(&socket_server);
-  wnd.SetTaskQueue(&thread);
+  // webrtc::AutoSocketServerThread thread(nullptr);
+  // wnd.SetTaskQueue(&thread);
 
   webrtc::InitializeSSL();
   // Must be constructed after we set the socketserver.
-  PeerConnectionClient client;
-  auto conductor = webrtc::make_ref_counted<Conductor>(&client, &wnd);
-  socket_server.set_client(&client);
-  socket_server.set_conductor(conductor.get());
+  // PeerConnectionClient client;
+  auto conductor = webrtc::make_ref_counted<Conductor>(nullptr, &wnd);
+  // socket_server.set_client(nullptr);
+  // socket_server.set_conductor(conductor.get());
   RTC_LOG(LS_INFO);
-  thread.PostDelayedTask(
-      [&conductor] { conductor.get()->StartLogin("127.0.0.1", 8888); },
-      webrtc::TimeDelta::Seconds(1));
-
+  // thread.PostDelayedTask(
+  //     [&conductor] { conductor.get()->StartLogin("127.0.0.1", 8888); },
+  //     webrtc::TimeDelta::Seconds(1));
+  // thread.PostDelayedTask(
+  //     [&conductor] { conductor.get()->ConnectToPeer(0); },
+  //     webrtc::TimeDelta::Seconds(1));
+  conductor.get()->ConnectToPeer(0);
+  // while(1){
+  //   std::this_thread::sleep_for(std::chrono::seconds(1));
+  // }
   thread.Run();
   RTC_LOG(LS_INFO);
 
