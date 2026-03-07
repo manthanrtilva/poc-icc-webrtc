@@ -25,8 +25,8 @@ RUN cd /workspaces/ && gclient sync ||  true
 # RUN cd /workspaces/src/ && bash build/install-build-deps.sh
 RUN apt update && apt install -y cmake build-essential gdb
 RUN echo "export PATH=/depot_tools:\$PATH" >> ~/.bashrc
-# COPY 18-02-26.patch /workspaces/src/
-# RUN cd /workspaces/src/ && git apply 18-02-26.patch
+COPY 16-02-26.patch /workspaces/src/
+RUN cd /workspaces/src/ && git apply 16-02-26.patch
 COPY build.sh /workspaces/src/
 RUN cd /workspaces/src/ && bash build.sh
 WORKDIR /workspaces/
