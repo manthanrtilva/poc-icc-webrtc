@@ -29,5 +29,6 @@ COPY 16-02-26.patch /workspaces/src/
 RUN cd /workspaces/src/ && git apply 16-02-26.patch
 COPY build.sh /workspaces/src/
 RUN cd /workspaces/src/ && bash build.sh
+RUN apt update && apt install -y sshpass
 WORKDIR /workspaces/
 CMD ["bash"]

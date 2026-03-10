@@ -128,6 +128,7 @@ struct UIThreadCallbackData {
 };
 
 gboolean HandleUIThreadCallback(gpointer data) {
+  RTC_LOG(LS_INFO);
   UIThreadCallbackData* cb_data = reinterpret_cast<UIThreadCallbackData*>(data);
   cb_data->callback->UIThreadCallback(cb_data->msg_id, cb_data->data);
   delete cb_data;
@@ -230,6 +231,7 @@ void GtkMainWnd::StopRemoteRenderer() {
 }
 
 void GtkMainWnd::QueueUIThreadCallback(int msg_id, void* data) {
+  RTC_LOG(LS_INFO);
   g_idle_add(HandleUIThreadCallback,
              new UIThreadCallbackData(callback_, msg_id, data));
 }

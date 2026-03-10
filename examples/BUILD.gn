@@ -23,6 +23,9 @@ group("examples") {
       ":pclient3",
       ":pclient4",
       ":pclient5",
+      ":pclient6",
+      ":pclient7",
+      ":pclient8",
     ]
   }
 }
@@ -258,6 +261,117 @@ if (is_linux || is_chromeos || is_win) {
     deps += [
       "../../rtc_base:rtc_json",
       "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient6") {
+    testonly = true
+    sources = [
+      "peerconnection6/client/conductor.cc",
+      "peerconnection6/client/conductor.h",
+      "peerconnection6/client/defaults.cc",
+      "peerconnection6/client/defaults.h",
+      "peerconnection6/client/peer_connection_client.cc",
+      "peerconnection6/client/peer_connection_client.h",
+    ]
+
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+    ]
+    if (is_linux || is_chromeos) {
+      sources += [
+        "peerconnection6/client/linux/main.cc",
+        "peerconnection6/client/linux/main_wnd.cc",
+        "peerconnection6/client/linux/main_wnd.h",
+      ]
+      cflags = [ "-Wno-deprecated-declarations" ]
+      libs = [
+      ]
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
+      "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient7") {
+    testonly = true
+    sources = [
+      "peerconnection7/client/conductor.cc",
+      "peerconnection7/client/conductor.h",
+      "peerconnection7/client/defaults.cc",
+      "peerconnection7/client/defaults.h",
+      "peerconnection7/client/peer_connection_client.cc",
+      "peerconnection7/client/peer_connection_client.h",
+    ]
+
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+      "../../test:frame_generator_capturer",
+      "../../test:platform_video_capturer",
+      "../../test:rtp_test_utils",
+      "../../test:test_video_capturer",
+    ]
+    if (is_linux || is_chromeos) {
+      sources += [
+        "peerconnection7/client/linux/main.cc",
+        "peerconnection7/client/linux/main_wnd.cc",
+        "peerconnection7/client/linux/main_wnd.h",
+      ]
+      cflags = [ "-Wno-deprecated-declarations" ]
+      libs = [
+        "X11",
+        "Xcomposite",
+        "Xext",
+        "Xrender",
+      ]
+      configs += [ ":gtk_config" ]
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
+      "//third_party/abseil-cpp/absl/flags:parse",
+    ]
+  }
+  rtc_executable("pclient8") {
+    testonly = true
+    sources = [
+      "peerconnection8/client/conductor.cc",
+      "peerconnection8/client/conductor.h",
+      "peerconnection8/client/defaults.cc",
+      "peerconnection8/client/defaults.h",
+    ]
+
+    include_dirs = [
+      ".",
+    ]
+    deps = [
+      "../../:webrtc",
+      "../../test:field_trial",
+      "../../test:frame_generator_capturer",
+      "../../test:platform_video_capturer",
+      "../../test:rtp_test_utils",
+      "../../test:test_video_capturer",
+    ]
+    if (is_linux || is_chromeos) {
+      sources += [
+        "peerconnection8/client/linux/main.cc",
+        "peerconnection8/client/linux/main_wnd.cc",
+        "peerconnection8/client/linux/main_wnd.h",
+      ]
+      cflags = [ "-Wno-deprecated-declarations" ]
+      
+    }
+
+    deps += [
+      "../../rtc_base:rtc_json",
     ]
   }
 }

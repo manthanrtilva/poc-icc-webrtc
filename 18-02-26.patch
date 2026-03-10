@@ -22,18 +22,3 @@ index e4a82bc8d6..67831c8bd8 100644
      sources = []
      complete_static_lib = true
      suppressed_configs += [ "//build/config/compiler:thin_archive" ]
-diff --git a/examples/BUILD.gn b/examples/BUILD.gn
-index 69022724e4..b1f807b9e2 100644
---- a/examples/BUILD.gn
-+++ b/examples/BUILD.gn
-@@ -49,8 +49,8 @@ group("examples") {
-   if (is_linux || is_chromeos || is_win) {
-     deps += [
-       ":peerconnection_server",
--      ":stunserver",
--      ":turnserver",
-+#      ":stunserver",
-+#      ":turnserver",
-     ]
-     if (current_os != "winuwp") {
-       deps += [ ":peerconnection_client" ]

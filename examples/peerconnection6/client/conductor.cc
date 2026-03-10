@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "peerconnection5/client/conductor.h"
+#include "peerconnection6/client/conductor.h"
 
 #include <stddef.h>
 
@@ -53,9 +53,9 @@
 #include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_factory.h"
 #include "pc/video_track_source.h"
-#include "peerconnection5/client/defaults.h"
-#include "peerconnection5/client/main_wnd.h"
-#include "peerconnection5/client/peer_connection_client.h"
+#include "peerconnection6/client/defaults.h"
+#include "peerconnection6/client/main_wnd.h"
+#include "peerconnection6/client/peer_connection_client.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/json.h"
@@ -88,7 +88,7 @@ class DummySetSessionDescriptionObserver
                      << error.message();
   }
 };
-
+#if 0
 std::unique_ptr<TestVideoCapturer> CreateCapturer(
     webrtc::TaskQueueFactory& task_queue_factory) {
   const size_t kWidth = 640;
@@ -137,7 +137,7 @@ class CapturerTrackSource : public webrtc::VideoTrackSource {
 
   std::unique_ptr<TestVideoCapturer> capturer_;
 };
-
+#endif
 }  // namespace
 
 Conductor::Conductor(PeerConnectionClient* client, MainWindow* main_wnd)
@@ -170,22 +170,22 @@ bool Conductor::InitializePeerConnection() {
 
   webrtc::PeerConnectionFactoryDependencies deps;
   deps.signaling_thread = signaling_thread_.get();
-  deps.task_queue_factory = webrtc::CreateDefaultTaskQueueFactory(),
-  deps.audio_encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
-  deps.audio_decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
-  deps.video_encoder_factory =
-      std::make_unique<webrtc::VideoEncoderFactoryTemplate<
-          webrtc::LibvpxVp8EncoderTemplateAdapter,
-          webrtc::LibvpxVp9EncoderTemplateAdapter,
-          webrtc::OpenH264EncoderTemplateAdapter,
-          webrtc::LibaomAv1EncoderTemplateAdapter>>();
-  deps.video_decoder_factory =
-      std::make_unique<webrtc::VideoDecoderFactoryTemplate<
-          webrtc::LibvpxVp8DecoderTemplateAdapter,
-          webrtc::LibvpxVp9DecoderTemplateAdapter,
-          webrtc::OpenH264DecoderTemplateAdapter,
-          webrtc::Dav1dDecoderTemplateAdapter>>();
-  webrtc::EnableMedia(deps);
+  deps.task_queue_factory = webrtc::CreateDefaultTaskQueueFactory();
+  // deps.audio_encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
+  // deps.audio_decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
+  // deps.video_encoder_factory =
+  //     std::make_unique<webrtc::VideoEncoderFactoryTemplate<
+  //         webrtc::LibvpxVp8EncoderTemplateAdapter,
+  //         webrtc::LibvpxVp9EncoderTemplateAdapter,
+  //         webrtc::OpenH264EncoderTemplateAdapter,
+  //         webrtc::LibaomAv1EncoderTemplateAdapter>>();
+  // deps.video_decoder_factory =
+  //     std::make_unique<webrtc::VideoDecoderFactoryTemplate<
+  //         webrtc::LibvpxVp8DecoderTemplateAdapter,
+  //         webrtc::LibvpxVp9DecoderTemplateAdapter,
+  //         webrtc::OpenH264DecoderTemplateAdapter,
+  //         webrtc::Dav1dDecoderTemplateAdapter>>();
+  // webrtc::EnableMedia(deps);
   task_queue_factory_ = deps.task_queue_factory.get();
   peer_connection_factory_ =
       webrtc::CreateModularPeerConnectionFactory(std::move(deps));
@@ -309,7 +309,6 @@ void Conductor::OnIceCandidate(const webrtc::IceCandidateInterface* candidate) {
   jmessage[kCandidateSdpName] = sdp;
 
   Json::StreamWriterBuilder factory;
-  RTC_LOG(LS_INFO);
   SendMessage(Json::writeString(factory, jmessage));
 }
 
@@ -459,7 +458,6 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
 
 void Conductor::OnMessageSent(int err) {
   // Process the next pending message if any.
-  RTC_LOG(LS_INFO);
   main_wnd_->QueueUIThreadCallback(SEND_MESSAGE_TO_PEER, NULL);
 }
 
@@ -519,7 +517,7 @@ void Conductor::AddTracks() {
   if (!peer_connection_->GetSenders().empty()) {
     return;  // Already added tracks.
   }
-
+#if 0
   webrtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
       peer_connection_factory_->CreateAudioTrack(
           kAudioLabel,
@@ -546,7 +544,7 @@ void Conductor::AddTracks() {
   } else {
     RTC_LOG(LS_ERROR) << "OpenVideoCaptureDevice failed";
   }
-
+#endif
   main_wnd_->SwitchToStreamingUI();
 }
 
@@ -562,7 +560,6 @@ void Conductor::DisconnectFromCurrentPeer() {
 }
 
 void Conductor::UIThreadCallback(int msg_id, void* data) {
-  RTC_LOG(LS_INFO);
   switch (msg_id) {
     case PEER_CONNECTION_CLOSED:
       RTC_LOG(LS_INFO) << "PEER_CONNECTION_CLOSED";
@@ -661,7 +658,6 @@ void Conductor::OnSuccess(webrtc::SessionDescriptionInterface* desc) {
   jmessage[kSessionDescriptionSdpName] = sdp;
 
   Json::StreamWriterBuilder factory;
-  RTC_LOG(LS_INFO);
   SendMessage(Json::writeString(factory, jmessage));
 }
 
@@ -671,7 +667,6 @@ void Conductor::OnFailure(webrtc::RTCError error) {
 
 void Conductor::SendMessage(const std::string& json_object) {
   std::string* msg = new std::string(json_object);
-  RTC_LOG(LS_INFO);
   main_wnd_->QueueUIThreadCallback(SEND_MESSAGE_TO_PEER, msg);
 }
 
@@ -705,9 +700,11 @@ void Conductor::SendChatMessage(const std::string& message) {
     webrtc::DataBuffer buffer(message);
     data_channel_->Send(buffer);
     std::string* echo = new std::string("Me: " + message);
-    RTC_LOG(LS_INFO);
     main_wnd_->QueueUIThreadCallback(CHAT_MESSAGE_RECEIVED, echo);
   } else {
     RTC_LOG(LS_WARNING) << "Data channel not open, cannot send message";
   }
+}
+const Peers& Conductor::ListPeers() {
+  return client_->peers();
 }
